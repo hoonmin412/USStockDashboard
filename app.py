@@ -19,7 +19,7 @@ with st.sidebar:
     # 메뉴 선택 (라디오 버튼)
     menu = st.radio(
         "이동할 페이지",
-        ["Home", "Main_Dashboard", "설정"]
+        ["Home", "Main_Dashboard", "Settings"]
     )
     
     st.divider()
@@ -29,7 +29,7 @@ with st.sidebar:
     check_val = st.checkbox("데이터 상세 보기")
 
 # 3. 메인 페이지 로직
-if menu == "홈":
+if menu == "Home":
     st.title(f"👋 {user_name}님, 시장 현황입니다.")
     
     # 1. 데이터 가져오기 (NASDAQ & S&P 500)
@@ -74,7 +74,7 @@ if menu == "홈":
     except Exception as e:
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
 
-elif menu == "데이터 분석":
+elif menu == "Main_Dashboard":
     st.title("🔍 데이터 분석 공간")
     
     # 샘플 데이터 생성
@@ -98,7 +98,7 @@ elif menu == "데이터 분석":
         st.write("### 상세 데이터 요약")
         st.write(chart_data.describe())
 
-elif menu == "설정":
+elif menu == "Settings":
     st.title("⚙️ 설정")
     st.write(f"현재 사용자: **{user_name}**")
     
