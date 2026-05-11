@@ -29,7 +29,8 @@ with st.sidebar:
 
 # 3. 메인 페이지 로직
 if menu == "홈":
-    st.title(f"👋 환영합니다, {user_name}님!")
+    # st.title(f"👋 환영합니다, {user_name}님!")
+    st.title(f"👋 환영합니다, HMJ 쀼님!")
     st.subheader("이 앱은 Streamlit 표준 템플릿입니다.")
     
     # 메트릭스 표시 (대시보드 상단 느낌)
