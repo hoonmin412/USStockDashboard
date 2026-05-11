@@ -30,7 +30,7 @@ with st.sidebar:
 
 # 3. 메인 페이지 로직
 if menu == "Home":
-st.title(f"👋 {user_name}님, 시장 현황입니다.")
+    st.title(f"👋 {user_name}님, 시장 현황입니다.")
     
     # 1. 데이터 가져오기 (최근 10년)
     @st.cache_data(ttl=3600)
