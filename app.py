@@ -30,7 +30,6 @@ with st.sidebar:
 
 # 3. 메인 페이지 로직
 if menu == "Home":
-    if menu == "홈":
     # 1. 데이터 가져오기 (최대 10년치 캐싱)
     @st.cache_data(ttl=3600)
     def get_market_data_10y():
