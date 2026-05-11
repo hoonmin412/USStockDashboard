@@ -25,7 +25,7 @@ def run_home(user_name):
 
         header_col1, header_col2 = st.columns([2, 1])
         with header_col1:
-            st.title(f"👋 {user_name}님, 시장 현황")
+            st.title(f"👋 반갑습니다 {user_name}님!")
         with header_col2:
             st.write("")
             st.write("")
