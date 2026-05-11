@@ -20,7 +20,7 @@ with st.sidebar:
         ["Home", "Main_Dashboard", "Settings"]
     )
     st.divider()
-    user_name = st.text_input("사용자 이름", value="Guest")
+    user_name = st.text_input("사용자 이름", value="훈민정 쀼")
     check_val = st.checkbox("데이터 상세 보기")
 
 # 3. 메인 로직 (모듈 함수 호출)
