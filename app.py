@@ -30,46 +30,60 @@ with st.sidebar:
 
 # 3. 메인 페이지 로직
 if menu == "Home":
-    st.title(f"👋 {user_name}님, 시장 현황입니다.")
+st.title(f"👋 {user_name}님, 시장 현황입니다.")
     
-    # 1. 데이터 가져오기 (NASDAQ & S&P 500)
-    @st.cache_data(ttl=3600) # 1시간 동안 캐시 유지하여 속도 향상
-    def get_market_data():
+    # 1. 데이터 가져오기 (최근 10년)
+    @st.cache_data(ttl=3600)
+    def get_market_data_10y():
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
+        # 10년 전 날짜 계산
+        start_date = end_date - timedelta(days=365 * 10)
         
-        # NASDAQ(^IXIC), S&P 500(^GSPC) 티커 사용
         tickers = {"NASDAQ": "^IXIC", "S&P 500": "^GSPC"}
         data = pd.DataFrame()
         
         for name, ticker in tickers.items():
+            # yfinance로 데이터 다운로드
             df = yf.download(ticker, start=start_date, end=end_date)
-            data[name] = df['Close']
+            # 'Close' 컬럼이 MultiIndex로 올 경우를 대비해 처리
+            if isinstance(df.columns, pd.MultiIndex):
+                data[name] = df[('Close', ticker)]
+            else:
+                data[name] = df['Close']
         return data
 
     try:
-        df_market = get_market_data()
+        with st.spinner('10년치 데이터를 불러오는 중입니다...'):
+            df_market = get_market_data_10y()
 
-        # 2. 메트릭스 표시 (현재가 및 전일 대비 등락 간단 계산)
-        col1, col2 = st.columns(2)
+        # 2. 메트릭스 표시 (상단 배치)
+        m_col1, m_col2 = st.columns(2)
         
-        for i, col in enumerate([col1, col2]):
+        for i, col in enumerate([m_col1, m_col2]):
             name = df_market.columns[i]
             current_price = df_market[name].iloc[-1]
             prev_price = df_market[name].iloc[-2]
             delta = current_price - prev_price
             col.metric(name, f"{current_price:,.2f}", f"{delta:,.2f}")
 
-        # 3. 꺾은선 그래프 시각화
-        st.write("### 📈 최근 30일 지수 추이")
-        
-        # 두 지수의 단위가 다르므로 전처리 후 보여주거나 멀티 차트 활용
-        # 여기서는 깔끔하게 Streamlit 기본 차트 사용
-        st.line_chart(df_market)
+        st.divider()
 
-        # 4. 데이터 표 출력 (선택 사항)
-        with st.expander("상세 데이터 보기"):
-            st.dataframe(df_market.sort_index(ascending=False))
+        # 3. 좌우로 나누어 꺾은선 그래프 시각화
+        st.write("### 📈 최근 10년 지수 추이")
+        chart_col1, chart_col2 = st.columns(2)
+
+        with chart_col1:
+            st.write("#### NASDAQ (^IXIC)")
+            # 개별 차트의 경우 특정 컬럼만 지정
+            st.line_chart(df_market["NASDAQ"], color="#31333F")
+
+        with chart_col2:
+            st.write("#### S&P 500 (^GSPC)")
+            st.line_chart(df_market["S&P 500"], color="#FF4B4B")
+
+        # 4. 상세 데이터 (최근 순 정렬)
+        with st.expander("상세 데이터 보기 (최근 10년)"):
+            st.dataframe(df_market.sort_index(ascending=False), use_container_width=True)
 
     except Exception as e:
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
