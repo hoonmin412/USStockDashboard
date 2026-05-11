@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf # 금융 데이터 호출을 위해 추가
 import numpy as np
-import time
+from datetime import datetime, timedelta
 
 # 1. 페이지 설정 (웹 브라우저 탭 이름 및 아이콘)
 st.set_page_config(
@@ -18,7 +19,7 @@ with st.sidebar:
     # 메뉴 선택 (라디오 버튼)
     menu = st.radio(
         "이동할 페이지",
-        ["홈", "데이터 분석", "설정"]
+        ["Home", "Main_Dashboard", "설정"]
     )
     
     st.divider()
@@ -29,23 +30,49 @@ with st.sidebar:
 
 # 3. 메인 페이지 로직
 if menu == "홈":
-    # st.title(f"👋 환영합니다, {user_name}님!")
-    st.title(f"👋 환영합니다, HMJ 쀼님!")
-    st.subheader("이 앱은 Streamlit 표준 템플릿입니다.")
+    st.title(f"👋 {user_name}님, 시장 현황입니다.")
     
-    # 메트릭스 표시 (대시보드 상단 느낌)
-    col1, col2, col3 = st.columns(3)
-    col1.metric("방문자 수", "1,200명", "12%")
-    col2.metric("성능", "98%", "0.4%")
-    col3.metric("오류율", "0.2%", "-0.1%")
+    # 1. 데이터 가져오기 (NASDAQ & S&P 500)
+    @st.cache_data(ttl=3600) # 1시간 동안 캐시 유지하여 속도 향상
+    def get_market_data():
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        # NASDAQ(^IXIC), S&P 500(^GSPC) 티커 사용
+        tickers = {"NASDAQ": "^IXIC", "S&P 500": "^GSPC"}
+        data = pd.DataFrame()
+        
+        for name, ticker in tickers.items():
+            df = yf.download(ticker, start=start_date, end=end_date)
+            data[name] = df['Close']
+        return data
 
-    st.markdown("""
-    ---
-    ### 📝 사용 방법
-    1. 왼쪽 **사이드바**에서 메뉴를 선택하세요.
-    2. 데이터 분석 탭에서 가상의 데이터를 확인하세요.
-    3. 원하는 로직을 `app.py`에 추가하여 배포할 수 있습니다.
-    """)
+    try:
+        df_market = get_market_data()
+
+        # 2. 메트릭스 표시 (현재가 및 전일 대비 등락 간단 계산)
+        col1, col2 = st.columns(2)
+        
+        for i, col in enumerate([col1, col2]):
+            name = df_market.columns[i]
+            current_price = df_market[name].iloc[-1]
+            prev_price = df_market[name].iloc[-2]
+            delta = current_price - prev_price
+            col.metric(name, f"{current_price:,.2f}", f"{delta:,.2f}")
+
+        # 3. 꺾은선 그래프 시각화
+        st.write("### 📈 최근 30일 지수 추이")
+        
+        # 두 지수의 단위가 다르므로 전처리 후 보여주거나 멀티 차트 활용
+        # 여기서는 깔끔하게 Streamlit 기본 차트 사용
+        st.line_chart(df_market)
+
+        # 4. 데이터 표 출력 (선택 사항)
+        with st.expander("상세 데이터 보기"):
+            st.dataframe(df_market.sort_index(ascending=False))
+
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
 
 elif menu == "데이터 분석":
     st.title("🔍 데이터 분석 공간")
