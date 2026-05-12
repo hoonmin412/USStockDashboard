@@ -1,11 +1,56 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-# import pandas_datareader as pdr
 from datetime import datetime, timedelta
+import requests
+import io
+
+# --- 1. 설정 및 데이터 로드 함수 ---
+SHEET_ID = "1j70bcEEuSr-AuzNW-j4_Huzi-fOJ0tTV66uUTikS0hs"
+# 발급받은 Apps Script 웹 앱 URL
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxlhwsYk3feGt-8FFFme76g4gqgRyVPXNhd1VKvY5dqGQkmJ-aYVvExoNsel2z6RXeo/exec"
+
+def load_gsheet_data(sheet_id):
+    """구글 시트에서 데이터를 안전하게 읽어옴 (한글 인코딩 해결)"""
+    try:
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+        response = requests.get(url)
+        response.encoding = 'utf-8'
+        
+        if response.status_code == 200:
+            df = pd.read_csv(io.StringIO(response.text))
+            df.columns = [c.strip().capitalize() for c in df.columns]
+            
+            if 'Ticker' in df.columns and 'Sector' in df.columns:
+                return df[['Sector', 'Ticker']].dropna()
+            else:
+                st.error("시트 헤더를 확인하세요: 'Ticker', 'Sector' 열이 필요합니다.")
+                return pd.DataFrame(columns=['Sector', 'Ticker'])
+        else:
+            return pd.DataFrame(columns=['Sector', 'Ticker'])
+    except Exception as e:
+        st.error(f"구글 시트 연결 에러: {e}")
+        return pd.DataFrame(columns=['Sector', 'Ticker'])
+
+def save_to_gsheet(df):
+    """구글 시트에 데이터를 실제로 저장 (Apps Script POST 요청)"""
+    try:
+        # 데이터프레임을 JSON 리스트로 변환
+        data_to_send = df.to_dict('records')
+        # Apps Script는 Redirect를 사용하므로 allow_redirects 옵션 확인 (requests는 기본이 True)
+        response = requests.post(APPS_SCRIPT_URL, json=data_to_send)
+        if response.status_code == 200 or "Success" in response.text:
+            return True
+        else:
+            st.error(f"저장 실패: {response.status_code}")
+            return False
+    except Exception as e:
+        st.error(f"저장 중 오류 발생: {e}")
+        return False
 
 def calculate_rsi(data, window=14):
     """최근 종가 데이터를 이용해 RSI 계산"""
+    if len(data) < window: return 0.0
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -14,115 +59,129 @@ def calculate_rsi(data, window=14):
     return rsi.iloc[-1]
 
 def get_stock_info(sector, symbol):
-    """yfinance를 이용해 종목의 상세 정보 추출"""
+    """yfinance를 이용해 종목 정보 추출"""
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(str(symbol).strip().upper())
         info = ticker.info
         
-        # 기본 정보
-        company_name = info.get('longName', 'N/A')
-        current_price = info.get('currentPrice', info.get('regularMarketPrice', 0))
-        per = info.get('forwardPE', info.get('trailingPE', 0))
-        eps = info.get('forwardEps', info.get('trailingEps', 0))
+        company_name = info.get('longName', symbol)
+        current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
+        per = info.get('forwardPE', info.get('trailingPE', 0.0))
+        eps = info.get('forwardEps', info.get('trailingEps', 0.0))
         
-        # RSI 계산 (최근 1개월 데이터 기반)
         hist = ticker.history(period="1mo")
-        rsi_val = calculate_rsi(hist['Close']) if not hist.empty else 0
+        rsi_val = calculate_rsi(hist['Close']) if not hist.empty else 0.0
         
-        # 실적 발표일 처리 (한국 시간 변환: UTC+9)
-        calendar = ticker.calendar
         earnings_date = "N/A"
-        if calendar is not None and 'Earnings Date' in calendar:
-            # 보통 여러 날짜가 리스트로 들어옴
-            dt = calendar['Earnings Date'][0]
-            # 한국 시간으로 변환 (+9시간)
-            kst_dt = dt + timedelta(hours=9)
-            earnings_date = kst_dt.strftime('%Y-%m-%d %H:%M')
+        try:
+            calendar = ticker.calendar
+            if calendar is not None and 'Earnings Date' in calendar:
+                dt = calendar['Earnings Date'][0]
+                kst_dt = dt + timedelta(hours=9)
+                earnings_date = kst_dt.strftime('%Y-%m-%d %H:%M')
+        except:
+            earnings_date = "N/A"
 
         return {
-            "섹터": sector,
-            "종목": symbol.upper(),
-            "기업 명": company_name,
-            "현재 주가": f"${current_price:,.2f}",
-            "PER": round(per, 2) if per else "N/A",
-            "EPS": round(eps, 2) if eps else "N/A",
-            "RSI": round(rsi_val, 2) if rsi_val else "N/A",
-            "다음 실적 발표 (KST)": earnings_date
+            "Sector": str(sector),
+            "Ticker": str(symbol).upper(),
+            "Company": str(company_name),
+            "Price": float(current_price) if current_price else 0.0,
+            "PER": float(per) if per else 0.0,
+            "EPS": float(eps) if eps else 0.0,
+            "RSI": round(float(rsi_val), 2) if rsi_val else 0.0,
+            "Earnings(KST)": earnings_date
         }
-    except Exception as e:
+    except:
         return None
 
+# --- 2. 메인 실행 함수 ---
 def run_dashboard(check_val):
-    st.title("🔍 종목 대시보드")
+    st.header("📊 실시간 종목 관리 대시보드")
 
-    # 1. 세션 상태에 종목 리스트 초기화
-    if 'stock_list' not in st.session_state:
-        st.session_state.stock_list = [
-            {"sector": "Tech", "symbol": "AAPL"},
-            {"sector": "Tech", "symbol": "NVDA"},
-            {"sector": "Index", "symbol": "QQQ"}
-        ]
+    # 세션 상태 초기화 (최초 1회 시트 데이터 로드)
+    if 'edit_df' not in st.session_state:
+        st.session_state.edit_df = load_gsheet_data(SHEET_ID)
 
-    # 2. 종목 추가 및 삭제 인터페이스
-    with st.expander("➕ 종목 관리 (추가/삭제)"):
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            new_sector = st.text_input("섹터 입력", placeholder="예: 반도체")
-        with col2:
-            new_symbol = st.text_input("티커 입력", placeholder="예: TSLA")
-        with col3:
-            st.write(" ") # 레이아웃 정렬용
-            if st.button("추가", use_container_width=True):
-                if new_sector and new_symbol:
-                    st.session_state.stock_list.append({"sector": new_sector, "symbol": new_symbol.upper()})
+    # 1. 인터랙티브 종목 관리 (테이블에서 직접 추가/삭제)
+    st.subheader("🛠 종목 리스트 관리")
+    st.caption("표 하단의 (+) 버튼으로 추가, 행 선택 후 [Delete] 키로 삭제 가능합니다.")
+    
+    new_edit_df = st.data_editor(
+        st.session_state.edit_df,
+        num_rows="dynamic",
+        width="stretch", 
+        key="main_editor",
+        column_config={
+            "Sector": st.column_config.TextColumn("섹터", required=True),
+            "Ticker": st.column_config.TextColumn("티커", required=True),
+        }
+    )
+
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        # [변경] 단순 적용이 아닌 구글 시트 저장 로직 연결
+        if st.button("💾 시트에 저장"):
+            with st.spinner('구글 시트에 데이터를 저장하는 중...'):
+                if save_to_gsheet(new_edit_df):
+                    st.session_state.edit_df = new_edit_df
+                    st.success("구글 시트에 성공적으로 저장되었습니다!")
                     st.rerun()
-                else:
-                    st.warning("섹터와 티커를 모두 입력하세요.")
+    with col2:
+        if st.button("🔄 시트에서 새로고침"):
+            st.session_state.edit_df = load_gsheet_data(SHEET_ID)
+            st.rerun()
 
-        st.divider()
-        
-        # 삭제 기능
-        st.write("현재 등록된 종목 (삭제하려면 선택)")
-        if st.session_state.stock_list:
-            # 삭제할 종목을 멀티셀렉트로 선택
-            delete_targets = st.multiselect(
-                "삭제할 종목을 선택하세요",
-                options=[f"{s['sector']} - {s['symbol']}" for s in st.session_state.stock_list]
-            )
-            if st.button("선택 종목 삭제"):
-                st.session_state.stock_list = [
-                    s for s in st.session_state.stock_list 
-                    if f"{s['sector']} - {s['symbol']}" not in delete_targets
-                ]
-                st.rerun()
-        else:
-            st.info("등록된 종목이 없습니다.")
+    st.divider()
 
-    # 3. 데이터 로딩 및 출력
-    if st.session_state.stock_list:
-        with st.spinner('실시간 데이터를 수집 중입니다...'):
+    # 2. 데이터 처리 및 출력
+    if not st.session_state.edit_df.empty:
+        with st.spinner('실시간 시장 데이터를 분석 중...'):
             results = []
-            for stock in st.session_state.stock_list:
-                data = get_stock_info(stock['sector'], stock['symbol'])
-                if data:
-                    results.append(data)
+            for _, row in st.session_state.edit_df.iterrows():
+                if pd.notna(row['Ticker']):
+                    data = get_stock_info(row['Sector'], row['Ticker'])
+                    if data: results.append(data)
             
             if results:
-                df = pd.DataFrame(results)
+                final_df = pd.DataFrame(results)
                 
-                # 테이블 출력
-                st.write("### 📊 나의 관심 종목 지표")
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                # --- 섹터 필터링 및 정렬 UI ---
+                st.subheader("📈 실시간 지표 분석")
+                f_col1, f_col2 = st.columns(2)
                 
-                # 상세 보기 체크박스 로직 (app.py에서 전달받은 값)
+                with f_col1:
+                    all_sectors = ["전체"] + sorted(final_df['Sector'].unique().tolist())
+                    selected_sector = st.selectbox("📂 섹터 필터링", all_sectors)
+                
+                with f_col2:
+                    sort_options = {"티커": "Ticker", "현재가": "Price", "PER": "PER", "RSI": "RSI"}
+                    selected_sort = st.selectbox("🔢 정렬 기준", list(sort_options.keys()))
+                
+                # 필터링 적용
+                if selected_sector != "전체":
+                    final_df = final_df[final_df['Sector'] == selected_sector]
+                
+                # 정렬 적용
+                is_ascending = (selected_sort == "티커")
+                final_df = final_df.sort_values(by=sort_options[selected_sort], ascending=is_ascending)
+
+                # 최종 결과 테이블 출력
+                st.dataframe(
+                    final_df, 
+                    width="stretch", 
+                    hide_index=True,
+                    column_config={
+                        "Price": st.column_config.NumberColumn("현재가", format="$%.2f"),
+                        "RSI": st.column_config.ProgressColumn("RSI", min_value=0, max_value=100, format="%.2f"),
+                        "PER": st.column_config.NumberColumn("PER", format="%.2f"),
+                        "EPS": st.column_config.NumberColumn("EPS", format="%.2f"),
+                    }
+                )
+                
                 if check_val:
-                    st.write("#### 💡 투자 지표 가이드")
-                    st.info("""
-                    - **PER**: 주가수익비율. 낮을수록 저평가 상태일 가능성이 있음.
-                    - **RSI**: 70 이상이면 과매수, 30 이하이면 과매도 구간으로 해석.
-                    - **Earnings Date**: 한국 시간(KST) 기준으로 표시됩니다.
-                    """)
+                    st.info("💡 **Tip:** 위 관리 테이블에서 종목을 변경한 후 '시트에 저장' 버튼을 눌러주세요.")
             else:
-                st.error("데이터를 불러올 수 있는 종목이 없습니다. 티커를 확인해 주세요.")
+                st.error("입력된 티커에서 데이터를 가져올 수 없습니다.")
     else:
-        st.warning("먼저 종목을 추가해 주세요.")
+        st.warning("종목 리스트가 비어있습니다. 관리 테이블에 종목을 추가하세요.")
