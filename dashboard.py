@@ -8,22 +8,32 @@ import io
 # --- 1. 설정 및 데이터 로드 함수 ---
 SHEET_ID = "1j70bcEEuSr-AuzNW-j4_Huzi-fOJ0tTV66uUTikS0hs"
 # 반드시 Apps Script에서 '모든 사용자(Anyone)'로 재배포한 새 URL을 넣으세요.
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyE_nwmOM3rZl9ROpG1It4qtbgPdQJLTnWD0Bv8SbpREMYmzKYAjkqrsXAWOXW3Uc0K/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby35O_YtaGBK1YfYnKFs1dABcCBTioOpUip0nPvm06WtOXA1t5LKCiIwW1yHSw-UfR9/exec"
 
 def load_gsheet_data(sheet_id):
+    """구글 시트에서 데이터를 안전하게 읽어옴 (Sector, Ticker, Memo)"""
     try:
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
         response = requests.get(url)
         response.encoding = 'utf-8'
+        
         if response.status_code == 200:
             df = pd.read_csv(io.StringIO(response.text))
             df.columns = [c.strip().capitalize() for c in df.columns]
-            # 비어있는 행 제거
-            df = df.dropna(subset=['Ticker'])
-            return df[['Sector', 'Ticker']]
-        return pd.DataFrame(columns=['Sector', 'Ticker'])
-    except:
-        return pd.DataFrame(columns=['Sector', 'Ticker'])
+            
+            # Memo 컬럼이 없으면 빈 컬럼 생성 (구구형 시트 호환)
+            if 'Memo' not in df.columns:
+                df['Memo'] = ""
+                
+            if 'Ticker' in df.columns and 'Sector' in df.columns:
+                # Memo까지 포함하여 반환 (결측치는 빈 문자열로 대체)
+                return df[['Sector', 'Ticker', 'Memo']].fillna("")
+            else:
+                st.error("시트 헤더를 확인하세요: 'Ticker', 'Sector' 열이 필요합니다.")
+                return pd.DataFrame(columns=['Sector', 'Ticker', 'Memo'])
+        return pd.DataFrame(columns=['Sector', 'Ticker', 'Memo'])
+    except Exception as e:
+        return pd.DataFrame(columns=['Sector', 'Ticker', 'Memo'])
 
 def save_to_gsheet(df):
     try:
@@ -91,53 +101,60 @@ def get_stock_info(sector, symbol):
         return None
 
 def run_dashboard(check_val):
+    # 한국 시간 설정
     kst_now = datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S')
     
     st.header("📊 실시간 종목 관리 대시보드")
-    # st.markdown(f"**Last Update (KST):** {kst_now}")
+    # 기존 우측 정렬 스타일 유지
     st.markdown(f"<p style='text-align: right; color: gray;'>last update (KST): {kst_now}</p>", unsafe_allow_html=True)
 
-    
     if 'edit_df' not in st.session_state:
         st.session_state.edit_df = load_gsheet_data(SHEET_ID)
 
-    st.subheader("🛠 종목 리스트 관리")
-    new_edit_df = st.data_editor(
-        st.session_state.edit_df,
-        num_rows="dynamic",
-        width="stretch", 
-        key="main_editor",
-        column_config={
-            "Sector": st.column_config.TextColumn("섹터", required=True),
-            "Ticker": st.column_config.TextColumn("티커", required=True),
-        }
-    )
+    # --- 1. 종목 리스트 관리 (Expander 적용 및 Memo 추가) ---
+    with st.expander("🛠 종목 리스트 관리", expanded=False):
+        # expander 내부에서도 기존 서브헤더 느낌을 위해 markdown 사용
+        st.markdown("### 종목 리스트 편집")
+        new_edit_df = st.data_editor(
+            st.session_state.edit_df,
+            num_rows="dynamic",
+            width="stretch", 
+            key="main_editor",
+            column_config={
+                "Sector": st.column_config.TextColumn("섹터", required=True),
+                "Ticker": st.column_config.TextColumn("티커", required=True),
+                "Memo": st.column_config.TextColumn("메모"), # 메모 컬럼 추가
+            }
+        )
 
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("💾 시트에 저장"):
-            with st.spinner('구글 시트 저장 중...'):
-                if save_to_gsheet(new_edit_df):
-                    st.session_state.edit_df = new_edit_df
-                    st.success("저장 완료!")
-                    st.rerun()
-                else:
-                    st.error("저장 실패 (Apps Script 설정을 확인하세요)")
-    with col2:
-        if st.button("🔄 새로고침"):
-            st.session_state.edit_df = load_gsheet_data(SHEET_ID)
-            st.rerun()
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("💾 시트에 저장"):
+                with st.spinner('구글 시트 저장 중...'):
+                    if save_to_gsheet(new_edit_df):
+                        st.session_state.edit_df = new_edit_df
+                        st.success("저장 완료!")
+                        st.rerun()
+                    else:
+                        st.error("저장 실패 (Apps Script 설정을 확인하세요)")
+        with col2:
+            if st.button("🔄 새로고침"):
+                st.session_state.edit_df = load_gsheet_data(SHEET_ID)
+                st.rerun()
 
     st.divider()
 
+    # --- 2. 지표 분석 결과 (가운데 정렬 및 데이터 병합) ---
     if not st.session_state.edit_df.empty:
         with st.spinner('실시간 시장 데이터를 분석 중...'):
             results = []
             for _, row in st.session_state.edit_df.iterrows():
-                # 티커가 존재할 때만 API 호출
                 if pd.notna(row['Ticker']) and str(row['Ticker']).strip():
                     data = get_stock_info(row['Sector'], row['Ticker'])
-                    if data: results.append(data)
+                    if data: 
+                        # 편집기에서 입력한 Memo를 결과 데이터에 합침
+                        data["Memo"] = row.get('Memo', "")
+                        results.append(data)
             
             if results:
                 final_df = pd.DataFrame(results)
@@ -156,16 +173,25 @@ def run_dashboard(check_val):
                 
                 final_df = final_df.sort_values(by=sort_options[selected_sort], ascending=(selected_sort == "티커"))
 
+                # --- 가운데 정렬 설정 병합 ---
+                # 모든 컬럼에 대해 기본적으로 가운데 정렬(alignment="center") 적용
+                column_defs = {
+                    col: st.column_config.Column(alignment="center") for col in final_df.columns
+                }
+                # 개별 컬럼 특성에 따른 추가 설정
+                column_defs.update({
+                    "Price": st.column_config.NumberColumn("현재가", format="$%.2f", alignment="center"),
+                    "RSI": st.column_config.ProgressColumn("RSI", min_value=0, max_value=100, format="%.2f"),
+                    "PER": st.column_config.NumberColumn("PER", format="%.2f", alignment="center"),
+                    "EPS": st.column_config.NumberColumn("EPS", format="%.2f", alignment="center"),
+                    "Memo": st.column_config.TextColumn("메모", alignment="center", width="medium"),
+                })
+
                 st.dataframe(
                     final_df, 
                     width="stretch", 
                     hide_index=True,
-                    column_config={
-                        "Price": st.column_config.NumberColumn("현재가", format="$%.2f"),
-                        "RSI": st.column_config.ProgressColumn("RSI", min_value=0, max_value=100, format="%.2f"),
-                        "PER": st.column_config.NumberColumn("PER", format="%.2f"),
-                        "EPS": st.column_config.NumberColumn("EPS", format="%.2f"),
-                    }
+                    column_config=column_defs
                 )
             else:
                 st.warning("유효한 티커가 없거나 데이터를 불러올 수 없습니다. 티커 오타를 확인해 주세요.")
