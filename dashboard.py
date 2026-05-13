@@ -69,8 +69,8 @@ def get_stock_info(sector, symbol):
         if not current_price: return None
 
         company_name = info.get('longName', ticker_symbol)
-        per = info.get('forwardPE', info.get('trailingPE', 0.0))
-        eps = info.get('forwardEps', info.get('trailingEps', 0.0))
+        per = info.get('trailingPE', 0.0)
+        eps = info.get('trailingEps', 0.0)
         
         hist = ticker.history(period="1mo")
         rsi_val = calculate_rsi(hist) if not hist.empty else 0.0
@@ -102,9 +102,9 @@ def get_stock_info(sector, symbol):
 
 def run_dashboard(check_val):
     # 한국 시간 설정
-    kst_now = datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S')
+    kst_now = datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')
     
-    st.header("📊 실시간 종목 관리 대시보드")
+    st.header("📊 My stock dashboard")
     # 기존 우측 정렬 스타일 유지
     st.markdown(f"<p style='text-align: right; color: gray;'>last update (KST): {kst_now}</p>", unsafe_allow_html=True)
 
@@ -142,7 +142,7 @@ def run_dashboard(check_val):
                 st.session_state.edit_df = load_gsheet_data(SHEET_ID)
                 st.rerun()
 
-    st.divider()
+    # st.divider()
 
     # --- 2. 지표 분석 결과 (가운데 정렬 및 데이터 병합) ---
     if not st.session_state.edit_df.empty:
@@ -160,18 +160,28 @@ def run_dashboard(check_val):
                 final_df = pd.DataFrame(results)
                 
                 st.subheader("📈 지표 분석 결과")
-                f_col1, f_col2 = st.columns(2)
-                with f_col1:
-                    all_sectors = ["전체"] + sorted(final_df['Sector'].unique().tolist())
-                    selected_sector = st.selectbox("📂 섹터 필터링", all_sectors)
-                with f_col2:
-                    sort_options = {"티커": "Ticker", "현재가": "Price", "PER": "PER", "RSI": "RSI"}
-                    selected_sort = st.selectbox("🔢 정렬 기준", list(sort_options.keys()))
                 
-                if selected_sector != "전체":
-                    final_df = final_df[final_df['Sector'] == selected_sector]
+                # f_col1, f_col2 = st.columns(2)
+                # with f_col1:
+                #     all_sectors = ["전체"] + sorted(final_df['Sector'].unique().tolist())
+                #     selected_sector = st.selectbox("📂 섹터 필터링", all_sectors)
+                # with f_col2:
+                #     sort_options = {"티커": "Ticker", "현재가": "Price", "PER": "PER", "RSI": "RSI"}
+                #     selected_sort = st.selectbox("🔢 정렬 기준", list(sort_options.keys()))
                 
-                final_df = final_df.sort_values(by=sort_options[selected_sort], ascending=(selected_sort == "티커"))
+                # if selected_sector != "전체":
+                #     final_df = final_df[final_df['Sector'] == selected_sector]
+                
+                # is_ascending = (selected_sort == "티커")
+                # final_df = final_df.sort_values(
+                #     by=["Sector", sort_options[selected_sort]], 
+                #     ascending=[True, is_ascending]
+                # )
+                
+                final_df = final_df.sort_values(
+                    by=["Sector", "Ticker"], 
+                    ascending=[True, True]
+                )
 
                 # --- 가운데 정렬 설정 병합 ---
                 # 모든 컬럼에 대해 기본적으로 가운데 정렬(alignment="center") 적용
@@ -195,3 +205,5 @@ def run_dashboard(check_val):
                 )
             else:
                 st.warning("유효한 티커가 없거나 데이터를 불러올 수 없습니다. 티커 오타를 확인해 주세요.")
+    
+    st.markdown(f"<p style='text-align: left; color: gray;'>※ PER과 EPS는 trailing values를 기반으로 계산됩니다.</p>", unsafe_allow_html=True)

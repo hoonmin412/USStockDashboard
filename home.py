@@ -29,15 +29,15 @@ def run_home(user_name):
         with header_col2:
             st.write("")
             st.write("")
-            st.markdown(f"<p style='text-align: right; color: gray;'>last update : {last_update_time.strftime('%Y-%m-%d %H:%M:%S')}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: right; color: gray;'>last update (KST): {last_update_time.strftime('%Y-%m-%d %H:%M')}</p>", unsafe_allow_html=True)
 
         st.divider()
 
-        if 'period_nasdaq' not in st.session_state: st.session_state.period_nasdaq = "1Month"
-        if 'period_snp500' not in st.session_state: st.session_state.period_snp500 = "1Month"
+        if 'period_nasdaq' not in st.session_state: st.session_state.period_nasdaq = "1M"
+        if 'period_snp500' not in st.session_state: st.session_state.period_snp500 = "1M"
 
-        time_tabs = ["10Year", "5Year", "1Year", "1Month", "1Week"]
-        period_map = {"10Year": 3650, "5Year": 1825, "1Year": 365, "1Month": 30, "1Week": 7}
+        time_tabs = ["10Y", "5Y", "1Y", "1M", "1W"]
+        period_map = {"10Y": 3650, "5Y": 1825, "1Y": 365, "1M": 30, "1W": 7}
 
         col_left, col_right = st.columns(2)
 
